@@ -1,0 +1,151 @@
+#!/sbin/sh
+# AnyKernel2 Backend
+# osm0sis @ xda-developers
+
+OUTFD=/proc/self/fd/$2;
+ZIPFILE="$3";
+DIR=`dirname "$ZIPFILE"`;
+
+ui_print() {
+  until [ ! "$1" ]; do
+    echo -e "ui_print $1\nui_print" > $OUTFD;
+    shift;
+  done;
+}
+show_progress() { echo "progress $1 $2" > $OUTFD; }
+set_perm_recursive() {
+  dirs=$(echo $* | $bb awk '{ print substr($0, index($0,$5)) }');
+  for i in $dirs; do
+    $bb chown -R $1:$2 $i;
+    $bb find "$i" -type d -exec chmod $3 {} +;
+    $bb find "$i" -type f -exec chmod $4 {} +;
+  done;
+}
+file_getprop() { grep "^$2=" "$1" | cut -d= -f2; }
+getprop() { test -e /sbin/getprop && /sbin/getprop $1 || file_getprop /default.prop $1; }
+cleanup() { rm -rf /tmp/anykernel; }
+debugging() {
+  case $(basename "$ZIPFILE" .zip) in
+    *-debugging)
+      ui_print " ";
+      ui_print "Creating debugging archive in zip directory...";
+      $bb tar -czvf "$DIR/anykernel2-$(date +%Y-%m-%d_%H%M%S)-debug.tgz" /tmp/*;
+    ;;
+    *-uninstall)
+      ACTION=Uninstall;
+    ;;
+  esac;
+}
+abort() {
+  ui_print "$*";
+  debugging;
+  if [ ! -f /tmp/anykernel/anykernel.sh -o "$(file_getprop /tmp/anykernel/anykernel.sh do.cleanuponabort 2>/dev/null)" == 1 ]; then
+    cleanup;
+  fi;
+  umount -l /system_root 2>/dev/null
+  exit 1;
+}
+resolve_link() {
+  RESOLVED="$1"
+  while RESOLVE=`readlink $RESOLVED`; do
+    RESOLVED=$RESOLVE
+  done
+  echo $RESOLVED
+}
+is_mounted() {
+  TARGET="`resolve_link $1`"
+  cat /proc/mounts | grep " $TARGET " >/dev/null
+  return $?
+}
+mount_system() { 
+  # Check A/B slot
+  slot=`getprop ro.boot.slot_suffix`
+  if [ -z $slot ]; then
+    slot=_`getprop ro.boot.slot`
+    [ $slot = "_" ] && slot=
+  fi
+  [ -z $slot ] || ui_print "A/B partition detected, current slot: $slot"
+  ui_print "Mounting /system for addon.d script"
+  is_mounted /system || [ -f /system/build.prop ] || mount -o rw /system 2>/dev/null
+  if ! is_mounted /system && ! [ -f /system/build.prop ]; then
+    SYSTEMBLOCK=`find /dev/block -iname system$slot | head -n 1`
+    mount -t ext4 -o rw $SYSTEMBLOCK /system
+  fi
+  is_mounted /system || [ -f /system/build.prop ] || abort "! Cannot mount /system"
+  cat /proc/mounts | grep -E '/dev/root|/system_root' >/dev/null && SKIP_INITRAMFS=true || SKIP_INITRAMFS=false
+  if [ -f /system/init.rc ]; then
+    SKIP_INITRAMFS=true
+    mkdir /system_root 2>/dev/null
+    mount --move /system /system_root
+    mount -o bind /system_root/system /system
+  fi
+  $SKIP_INITRAMFS && ui_print "Device skip_initramfs detected"
+  ui_print " "
+}
+
+#show_progress 1.34 4;
+ui_print " ";
+cleanup;
+mkdir -p /tmp/anykernel/bin;
+cd /tmp/anykernel;
+unzip -o "$ZIPFILE";
+if [ $? != 0 -o -z "$(ls /tmp/anykernel/tools)" ]; then
+  abort "Unzip failed. Aborting...";
+fi;
+bb=/tmp/anykernel/tools/busybox;
+chmod 755 $bb;
+$bb chmod -R 755 /tmp/anykernel/tools /tmp/anykernel/bin;
+
+ui_print "$(file_getprop /tmp/anykernel/anykernel.sh kernel.string)";
+ui_print " ";
+ui_print "AnyKernel2 by osm0sis @ xda-developers";
+ui_print " ";
+mount_system
+mount /data 2>/dev/null;
+
+if [ "$(file_getprop /tmp/anykernel/anykernel.sh do.devicecheck)" == 1 ]; then
+  ui_print "Checking device...";
+  for i in 1 2 3 4 5; do
+    testname="$(file_getprop /tmp/anykernel/anykernel.sh device.name$i)";
+    if [ "$(getprop ro.product.device)" == "$testname" -o "$(getprop ro.build.product)" == "$testname" ]; then
+      ui_print "$testname";
+      match=1;
+    fi;
+  done;
+  ui_print " ";
+  if [ "$match" != 1 ]; then
+    abort "Unsupported device. Aborting...";
+  fi;
+fi;
+
+for i in $($bb --list); do
+  $bb ln -s $bb /tmp/anykernel/bin/$i;
+done;
+if [ $? != 0 -o -z "$(ls /tmp/anykernel/bin)" ]; then
+  abort "Recovery busybox setup failed. Aborting...";
+fi;
+if [ -z $slot ]; then sed -i "/<ACTION>/d" /tmp/anykernel/tools/ak2-core.sh; else sed -i "s|<ACTION>|$ACTION|" /tmp/anykernel/tools/ak2-core.sh; fi
+if [ -z $slot ]; then sed -i "/<slot>/d" /tmp/anykernel/tools/ak2-core.sh; else sed -i "s|<slot>|$slot|" /tmp/anykernel/tools/ak2-core.sh; fi
+PATH="/tmp/anykernel/bin:$PATH" $bb ash /tmp/anykernel/anykernel.sh $2;
+if [ $? != "0" ]; then
+  abort;
+fi;
+
+if [ "$(file_getprop /tmp/anykernel/anykernel.sh do.modules)" == 1 ]; then
+  ui_print " ";
+  ui_print "Pushing modules...";
+  $bb cp -rLf /tmp/anykernel/modules/* /system/lib/modules/;
+  set_perm_recursive 0 0 0755 0644 /system/lib/modules;
+  chcon -R 'u:object_r:system_file:s0' /system/lib/modules;
+fi;
+
+debugging;
+
+if [ "$(file_getprop /tmp/anykernel/anykernel.sh do.cleanup)" == 1 ]; then
+  cleanup;
+fi;
+
+umount -l /system_root 2>/dev/null
+umount -l /system 2>/dev/null;
+ui_print " ";
+ui_print "Done!";
