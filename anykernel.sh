@@ -17,6 +17,7 @@ device.name5=
 } # end properties
 
 # shell variables
+ramdisk_compression=auto
 # determine the location of the boot partition
 if [ -e /dev/block/platform/*/by-name/boot ]; then
   block=/dev/block/platform/*/by-name/boot
@@ -43,20 +44,44 @@ ui_print "Unpacking boot image..."
 ui_print " "
 dump_boot
 
+# File list
+list="init.rc"
+
 # LG Bump Boot img support (credits to Drgravy @xda-developers)
-BUMP=false
+bump=false
 if [ "$(grep_prop ro.product.brand)" = "lge" ] || [ "$(grep_prop ro.product.brand)" = "LGE" ]; then 
   case $(grep_prop ro.product.device) in
-    d800|d801|d802|d803|ls980|vs980|101f|d850|d852|d855|ls990|vs985|f400) BUMP=true; ui_print "! Bump device detected !"; ui_print "! Using bump exploit !"; ui_print " ";;
+    d800|d801|d802|d803|ls980|vs980|101f|d850|d852|d855|ls990|vs985|f400) bump=true; ui_print "! Bump device detected !"; ui_print "! Using bump exploit !"; ui_print " ";;
 	*) ;;
   esac
 fi
-# Pixel/Nexus boot img signing support
-if device_check "bullhead" || device_check "angler"; then             
+
+# Pixel boot img signing support
+if [ ! -z $slot ]; then            
   mv -f $bin/avb-signing/avb $bin/avb-signing/BootSignature_Android.jar $bin
-elif [ ! -z $slot ]; then            
-  mv -f $bin/avb-signing/avb $bin/avb-signing/BootSignature_Android.jar $bin              
-  test -d $ramdisk/boot/dev -o -d $ramdisk/overlay && patch_cmdline "skip_override" "skip_override" || patch_cmdline "skip_override" ""
+  if [ -d $ramdisk/.subackup -o -d $ramdisk/.backup ]; then
+    patch_cmdline "skip_override" "skip_override"
+  else
+    patch_cmdline "skip_override" ""
+  fi
+  # Overlay stuff
+  if [ -d $ramdisk/.backup ]; then
+    overlay=$ramdisk/overlay
+  elif [ -d $ramdisk/.subackup ]; then
+    overlay=$ramdisk/boot
+  fi
+  num=1
+  for rdfile in $list; do
+    rddir=$(dirname $rdfile)
+    mkdir -p $overlay/$rddir
+    test ! -f $overlay/$rdfile && cp -rp /system/$rdfile $overlay/$rddir/
+    eval "file$num=$overlay/$rdfile"
+  done
+else
+  num=1
+  for rdfile in $list; do
+    eval "file$num=$rdfile"
+  done
 fi
 
 # determine install or uninstall
@@ -71,19 +96,15 @@ if [ -z $ACTION ]; then
   cpgd="${cpgd} $(find /sys/module -name '*collapse_enable')"
 
   # Add codec power gate disable line to init.rc
-  backup_file init.rc
+  backup_file $file1
   ui_print "Disabling codec power gating..."
   for i in ${cpgd}; do
-    insert_line init.rc "$cpgd" after "on post-fs-data" "    write $i 0"
+    insert_line $file1 "$cpgd" after "on post-fs-data" "    write $i 0"
   done
-  
-  # Add backup script
-  sed -i -e "s|<block>|$block|" $patch/cpgd.sh
-  if [ -d /system/addon.d ]; then ui_print "Installing addon.d script..."; cp -f $patch/cpgd.sh /system/addon.d/99cpgd.sh; chmod 0755 /system/addon.d/99cpgd.sh; else ui_print "No addon.d support detected!"; ui_print "Patched boot img won't survive dirty flash!"; fi
 else
   ui_print "Reenabling codec power gating..."
-  rm -f /system/addon.d/99cpgd.sh cpgdindicator
-  restore_file init.rc
+  rm -f cpgdindicator
+  restore_file $file1
 fi
 
 # end ramdisk changes
