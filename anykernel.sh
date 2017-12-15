@@ -74,10 +74,9 @@ if [ ! -z $slot ]; then
     rddir=$(dirname $rdfile)
     mkdir -p $overlay/$rddir
     test ! -f $overlay/$rdfile && cp -rp /system/$rdfile $overlay/$rddir/
-  done
-  overlay="${overlay}/"                       
+  done                       
 else
-  overlay=""            
+  overlay=$ramdisk
 fi
 
 # determine install or uninstall
@@ -92,15 +91,15 @@ if [ -z $ACTION ]; then
   cpgd="${cpgd} $(find /sys/module -name '*collapse_enable')"
 
   # Add codec power gate disable line to init.rc
-  backup_file $overlay\init.rc
+  backup_file $overlay/init.rc
   ui_print "Disabling codec power gating..."
   for i in ${cpgd}; do
-    insert_line $overlay\init.rc "$cpgd" after "on post-fs-data" "    write $i 0"
+    insert_line $overlay/init.rc "$cpgd" after "on post-fs-data" "    write $i 0"
   done
 else
   ui_print "Reenabling codec power gating..."
   rm -f cpgdindicator
-  restore_file $overlay\init.rc
+  restore_file $overlay/init.rc
 fi
 
 # end ramdisk changes
