@@ -423,9 +423,9 @@ replace_file() {
   chmod $2 $1;
 }
 
-# replace_and_patch <file>
-replace_and_patch() {
-  test -f $1 && { backup_file $1; rm -f $1; sed -i -e "\|<FILES>| a\$1~" -e "\|<FILES2>| a\  rm -f $1" -e "s|rm -f /system|rm -f $S|g" $patch/initd.sh; }
+# backup_and_remove <file>
+backup_and_remove() {
+  test -f $1 && { backup_file $1; rm -f $1; }
 }
 
 # patch_fstab <fstab file> <mount match name> <fs match type> <block|mount|fstype|options|flags> <original string> <replacement string>
@@ -469,11 +469,6 @@ patch_prop() {
 
 # grep_prop <prop name>
 grep_prop() { grep "^$1" "/system/build.prop" | cut -d= -f2; }
-
-# replace_and_patch <file>
-replace_and_patch() {
-  test -f $1 && { backup_file $1; rm -f $1; sed -i -e "\|<FILES>| a\$1~" -e "\|<FILES2>| a\  rm -f $1" -e "s|rm -f /system|rm -f $S|g" $patch/initd.sh; }
-}
 
 device_check() { test "$(getprop ro.product.device)" == "$1" -o "$(getprop ro.build.product)" == "$1" && return 0 || return 1; } 
 

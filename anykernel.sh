@@ -70,18 +70,14 @@ if [ ! -z $slot ]; then
   elif [ -d $ramdisk/.subackup ]; then
     overlay=$ramdisk/boot
   fi
-  num=1
   for rdfile in $list; do
     rddir=$(dirname $rdfile)
     mkdir -p $overlay/$rddir
     test ! -f $overlay/$rdfile && cp -rp /system/$rdfile $overlay/$rddir/
-    eval "file$num=$overlay/$rdfile"
   done
+  overlay="${overlay}/"                       
 else
-  num=1
-  for rdfile in $list; do
-    eval "file$num=$rdfile"
-  done
+  overlay=""            
 fi
 
 # determine install or uninstall
@@ -96,15 +92,15 @@ if [ -z $ACTION ]; then
   cpgd="${cpgd} $(find /sys/module -name '*collapse_enable')"
 
   # Add codec power gate disable line to init.rc
-  backup_file $file1
+  backup_file $overlay\init.rc
   ui_print "Disabling codec power gating..."
   for i in ${cpgd}; do
-    insert_line $file1 "$cpgd" after "on post-fs-data" "    write $i 0"
+    insert_line $overlay\init.rc "$cpgd" after "on post-fs-data" "    write $i 0"
   done
 else
   ui_print "Reenabling codec power gating..."
   rm -f cpgdindicator
-  restore_file $file1
+  restore_file $overlay\init.rc
 fi
 
 # end ramdisk changes
