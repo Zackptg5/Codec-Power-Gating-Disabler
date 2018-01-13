@@ -79,6 +79,21 @@ else
   overlay=$ramdisk
 fi
 
+# Detect if boot.img is signed - credits to chainfire @xda-developers
+unset LD_LIBRARY_PATH
+BOOTSIGNATURE="/system/bin/dalvikvm -Xbootclasspath:/system/framework/core-oj.jar:/system/framework/core-libart.jar:/system/framework/conscrypt.jar:/system/framework/bouncycastle.jar -Xnodex2oat -Xnoimage-dex2oat -cp $bin/avb-signing/BootSignature_Android.jar com.android.verity.BootSignature"
+if [ ! -f "/system/bin/dalvikvm" ]; then
+  # if we don't have dalvikvm, we want the same behavior as boot.art/oat not found
+  RET="initialize runtime"
+else
+  RET=$($BOOTSIGNATURE -verify /tmp/anykernel/boot.img 2>&1)
+fi
+test ! -z $slot && RET=$($BOOTSIGNATURE -verify /tmp/anykernel/boot.img 2>&1)
+if (`echo $RET | grep "VALID" >/dev/null 2>&1`); then
+  ui_print "Signed boot img detected!"
+  mv -f $bin/avb-signing/avb $bin/avb-signing/BootSignature_Android.jar $bin
+fi
+
 # determine install or uninstall
 test -f cpgdindicator && ACTION=Uninstall
 
@@ -107,4 +122,4 @@ ui_print " "
 ui_print "Repacking boot image..."
 write_boot
 
-# end install
+#end install
