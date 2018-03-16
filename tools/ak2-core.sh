@@ -25,6 +25,45 @@ reset_ak() {
   . /tmp/anykernel/tools/ak2-core.sh $FD;
 }
 
+# Slot device support
+slot_device() {
+  if [ ! -z $slot ]; then           
+    if [ -d $ramdisk/.subackup -o -d $ramdisk/.backup ]; then
+      patch_cmdline "skip_override" "skip_override"
+    else
+      patch_cmdline "skip_override" ""
+    fi
+    # Overlay stuff
+    if [ -d $ramdisk/.backup ]; then
+      overlay=$ramdisk/overlay
+    elif [ -d $ramdisk/.subackup ]; then
+      overlay=$ramdisk/boot
+    fi
+    for rdfile in $list; do
+      rddir=$(dirname $rdfile)
+      mkdir -p $overlay/$rddir
+      test ! -f $overlay/$rdfile && cp -rp /system/$rdfile $overlay/$rddir/
+    done                       
+  else
+    overlay=$ramdisk
+  fi
+}
+# Detect if boot.img is signed - credits to chainfire @xda-developers
+signedboot_check() {
+  unset LD_LIBRARY_PATH
+  BOOTSIGNATURE="/system/bin/dalvikvm -Xbootclasspath:/system/framework/core-oj.jar:/system/framework/core-libart.jar:/system/framework/conscrypt.jar:/system/framework/bouncycastle.jar -Xnodex2oat -Xnoimage-dex2oat -cp $bin/avb-signing/BootSignature_Android.jar com.android.verity.BootSignature"
+  if [ ! -f "/system/bin/dalvikvm" ]; then
+    # if we don't have dalvikvm, we want the same behavior as boot.art/oat not found
+    RET="initialize runtime"
+  else
+    RET=$($BOOTSIGNATURE -verify /tmp/anykernel/boot.img 2>&1)
+  fi
+  test ! -z $slot && RET=$($BOOTSIGNATURE -verify /tmp/anykernel/boot.img 2>&1)
+  if (`echo $RET | grep "VALID" >/dev/null 2>&1`); then
+    ui_print "Signed boot img detected!"
+    SIGNED=true
+  fi
+}
 # dump boot and extract ramdisk
 split_boot() {
   if [ ! -e "$(echo $block | cut -d\  -f1)" ]; then
@@ -89,6 +128,7 @@ unpack_ramdisk() {
     dd bs=512 skip=1 conv=notrunc if=$split_img/boot.img-ramdisk.gz of=$split_img/temprd;
     mv -f $split_img/temprd $split_img/boot.img-ramdisk.gz;
   fi;
+  rm -f $ramdisk/placeholder                          
   mv -f $ramdisk /tmp/anykernel/rdtmp;
    case $(od -ta -An -N4 $split_img/boot.img-ramdisk.gz) in
     '  us  vt'*|'  us  rs'*) compext="gz"; unpackcmd="gzip";;
@@ -109,12 +149,55 @@ unpack_ramdisk() {
     ui_print " "; ui_print "Unpacking ramdisk failed. Aborting..."; exit 1;
   fi;
   test ! -z "$(ls /tmp/anykernel/rdtmp)" && cp -af /tmp/anykernel/rdtmp/* $ramdisk;
-  rm -f $ramdisk/placeholder
+                             
+ 
+                    
+                                                                       
+                       
+                                                                                                                                                                                                                                                                                                       
+                                          
+                                                                                    
+                            
+      
+                                                              
+    
+                                                                               
+                                                       
+                                        
+                                                                              
+    
 }
 dump_boot() {
+  slot_device;
+  signedboot_check;
   split_boot;
   unpack_ramdisk;
-}            
+                   
+}
+
+                     
+               
+                                    
+                                                             
+                                                   
+        
+                                      
+      
+                   
+                                    
+                              
+                                        
+                           
+      
+                           
+                              
+                              
+                                                                           
+                               
+      
+                    
+    
+      
 
 # repack ramdisk then build and write image
 repack_ramdisk() {
@@ -251,7 +334,7 @@ flash_boot() {
     fi;
     mv -f boot-new-signed.img boot-new.img;
   fi;
-  if [ -f "$bin/BootSignature_Android.jar" -a -d "$bin/avb" ]; then
+  if [ ! -z $SIGNED ]; then
     ui_print "Signing boot image..."
     pk8=`ls $bin/avb/*.pk8`;
     cert=`ls $bin/avb/*.x509.*`;
@@ -283,8 +366,11 @@ flash_boot() {
   if [ "$(strings /tmp/anykernel/boot.img | grep SEANDROIDENFORCE )" ]; then
     printf 'SEANDROIDENFORCE' >> boot-new.img;
   fi;
-  if $bump; then
-    echo -n -e "\x41\xa9\xe4\x67\x74\x4d\x1d\x1b\xa4\x29\xf2\xec\xea\x65\x52\x79" >> boot-new.img;
+  if [ "$(grep_prop ro.product.brand)" == "lge" ] || [ "$(grep_prop ro.product.brand)" == "LGE" ]; then 
+    case $(grep_prop ro.product.device) in
+      d800|d801|d802|d803|ls980|vs980|101f|d850|d852|d855|ls990|vs985|f400) echo -n -e "\x41\xa9\xe4\x67\x74\x4d\x1d\x1b\xa4\x29\xf2\xec\xea\x65\x52\x79" >> boot-new.img;;
+    *) ;;
+    esac
   fi;
   if [ -f "$bin/dhtbsign" ]; then
     $bin/dhtbsign -i boot-new.img -o boot-new-signed.img;

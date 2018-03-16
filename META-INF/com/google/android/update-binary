@@ -40,19 +40,13 @@ abort() {
   if [ ! -f /tmp/anykernel/anykernel.sh -o "$(file_getprop /tmp/anykernel/anykernel.sh do.cleanuponabort 2>/dev/null)" == 1 ]; then
     cleanup;
   fi;
-  umount -l /system_root 2>/dev/null;
-  umount -l /system 2>/dev/null;                       
+  umount -l /system_root 2>/dev/null
+  umount -l /system 2>/dev/null
+  umount -l /vendor 2>/dev/null
   exit 1;
 }
-resolve_link() {
-  RESOLVED="$1"
-  while RESOLVE=`readlink $RESOLVED`; do
-    RESOLVED=$RESOLVE
-  done
-  echo $RESOLVED
-}
 is_mounted() {
-  TARGET="`resolve_link $1`"
+  TARGET="`readlink -f $1`"
   cat /proc/mounts | grep " $TARGET " >/dev/null
   return $?
 }
@@ -78,6 +72,15 @@ mount_system() {
     mount -o bind /system_root/system /system
   fi
   $SKIP_INITRAMFS && ui_print "Device skip_initramfs detected"
+  if [ -L /system/vendor ]; then
+    # Seperate /vendor partition
+    is_mounted /vendor || mount -o rw /vendor 2>/dev/null
+    if ! is_mounted /vendor; then
+      VENDORBLOCK=`find /dev/block -iname vendor$SLOT | head -n 1`
+      mount -t ext4 -o rw $VENDORBLOCK /vendor
+    fi
+    is_mounted /vendor || abort "! Cannot mount /vendor"
+  fi                              
   ui_print " "
 }
 
@@ -110,6 +113,8 @@ fi;
 ui_print " ";
 ui_print "AnyKernel2 by osm0sis @ xda-developers";
 ui_print " ";
+ui_print " ";
+
 mount_system
 mount /data 2>/dev/null;
 
@@ -120,6 +125,7 @@ if [ "$(file_getprop /tmp/anykernel/anykernel.sh do.devicecheck)" == 1 ]; then
     if [ "$(getprop ro.product.device)" == "$testname" -o "$(getprop ro.build.product)" == "$testname" ]; then
       ui_print "$testname";
       match=1;
+      break;      
     fi;
   done;
   ui_print " ";
@@ -168,7 +174,9 @@ if [ "$(file_getprop /tmp/anykernel/anykernel.sh do.cleanup)" == 1 ]; then
   cleanup;
 fi;
 
-umount -l /system_root 2>/dev/null;
-umount -l /system 2>/dev/null;
+umount -l /system_root 2>/dev/null
+umount -l /system 2>/dev/null
+umount -l /vendor 2>/dev/null
 ui_print " ";
+ui_print " ";             
 ui_print "Done!";
