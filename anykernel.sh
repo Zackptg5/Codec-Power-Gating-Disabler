@@ -21,9 +21,6 @@ ramdisk_compression=auto;
 is_slot_device=auto;
 block=auto;
 
-# force expansion of the path so we can use it
-block=`echo -n $block`;
-
 ## AnyKernel methods (DO NOT CHANGE)
 # import patching functions/variables - see for reference
 . /tmp/anykernel/tools/ak2-core.sh
